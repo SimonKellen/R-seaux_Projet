@@ -162,30 +162,51 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
-    if(len>pkt_get_length(pkt)){
+    size_t count=1;
+    if((*len)<count){
         return -1;
     }
-    int count=0;
     memcpy(buf, pkt, 1);
-    count+=1;
     if(predict_header_length(pkt)==7){
-        memcpy(buf, pkt->length, 1);
         count+=1;
+        if((*len)<count){
+            return -1;
+        }
+        memcpy(buf, pkt->length, 1);
     }
     else{
-        memcpy(buf, pkt->length, 2);
-        count+=2;
+        count+=1;
+        if((*len)<count){
+            return -1;
+        }
+        memcpy(buf, pkt->length, 1);
+    }
+    count+=1;
+    if((*len)<count){
+    return -1;
     }
     memcpy(buf, &(pkt->seqnum), 1);
-    count+=1;
+    count+=4;
+    if((*len)<count){
+        return -1;
+    }
     memcpy(buf, &(pkt->timestamp), 4);
     count+=4;
+    if((*len)<count){
+        return -1;
+    }
     memcpy(buf, &(pkt->crc1), 4);
-    count+=4;
     uint16_t length=pkt_get_length(pkt);
-    memcpy(buf, pkt->payload, length);
     count+=length;
+    if((*len)<count){
+        return -1;
+    }
+    memcpy(buf, pkt->payload, length);
     if(pkt_get_crc2(pkt)!=0){
+        count+=4;
+        if((*len)<count){
+            return -1;
+        }
         memcpy(buf, &(pkt->crc2), 4);
     }
     return PKT_OK;
@@ -374,7 +395,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
             return -1;
         }
         uint8_t vals = (uint8_t) val;
-        valp = &(htons(vals));
+        *valp = htons(vals);
         memcpy(data, valp, 1);
         return 1;
     }
@@ -382,7 +403,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
     if(valp == NULL){
         return -1;
     }
-    uint16_t val2 = htons(*val);
+    uint16_t val2 = htons(val);
     valp = &val2;
     memcpy(data, valp, 2);
     return 2;
