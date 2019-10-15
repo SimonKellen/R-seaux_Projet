@@ -55,12 +55,12 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
         return -1;
     }
     memcpy(pkt, data, 1);
-    memcpy((pkt->length)[0], data[1], 1);
+    memcpy(&((pkt->length)[0]), &(data[1]), 1);
     if(((pkt->length)[0] & 0b10000000) == 0b10000000 ){
     	if(realloc((pkt->length),2*sizeof(uint8_t)) == NULL){
             return -1;
         }
-        memcpy((pkt->length)[1], data[2], 1);
+        memcpy(&((pkt->length)[1]), &(data[2]), 1);
     }
     ssize_t taille = predict_header_length(pkt);
     
@@ -91,59 +91,59 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
     }
     
     if(taille==7){
-        uint32_t crc1 = (uint32_t) *(data + 7);
+        uint32_t crc1bis = (uint32_t) *(data + 7);
         
-        uint32_t crc1 = ntohl(*((uint32_t *)(data + 8)));
+        crc1bis = ntohl(*((uint32_t *)(data + 8)));
 
 		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
 
 		new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
 
 
-		if(crc1 != new_crc1)
+		if(crc1bis != new_crc1)
 			return E_CRC;
-        verif = pkt_set_crc1(pkt, crc1);
+        verif = pkt_set_crc1(pkt, crc1bis);
         if(verif != PKT_OK)
             return verif;
     }
     
     else{
-        uint32_t crc1 = (uint32_t) *(data + 8);
-        verif = pkt_set_crc1(pkt, crc1);
+        uint32_t crc1bis = (uint32_t) *(data + 8);
+        verif = pkt_set_crc1(pkt, crc1bis);
     }
     
     if(taille==7){
-        verif = pkt_set_payload(pkt, *(data + 11), pkt->length);
+        verif = pkt_set_payload(pkt, (data + 11), *(pkt->length));
         if(verif != PKT_OK)
             return verif;
     }
     else{
-        verif = pkt_set_payload(pkt, *(data + 12), pkt->length);
+        verif = pkt_set_payload(pkt, (data + 12), *(pkt->length));
         if(verif != PKT_OK)
             return verif;
     }
     if(taille==7){
-        if(data[(pkt->length)+11]!=NULL){
-            uint32_t crc2 = (uint32_t) *(data + ((pkt->length)+11));
+        if(&(data[(pkt_get_length(pkt))+11])!=NULL){
+            uint32_t crc2bis = (uint32_t) *(data + ((pkt_get_length(pkt))+11));
         
-        	uint32_t crc2 = ntohl(*((uint32_t *)(data + ((pkt->length)+12))));
+        	crc2bis = ntohl(*((uint32_t *)(data + ((pkt_get_length(pkt))+12))));
             uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
 
 			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
 
 
-			if(crc2 != new_crc2)
+			if(crc2bis != new_crc2)
 			return E_CRC;
-            verif = pkt_set_crc2(pkt, *(data+(11+r->length)));
+            verif = pkt_set_crc2(pkt, *(data+(11+pkt_get_length(pkt))));
             if(verif != PKT_OK)
                 return verif;
         }
     }
     else{
-        if(data[(pkt->length)+12]!=NULL){
-            uint32_t crc2 = (uint32_t) *(data + ((pkt->length)+12));
+        if(&(data[(pkt_get_length(pkt))+12])!=NULL){
+            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12));
         
-        	uint32_t crc2 = ntohl(*((uint32_t *)(data + ((pkt->length)+13))));
+        	crc2 = ntohl(*((uint32_t *)(data + ((pkt_get_length(pkt))+13))));
             uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
 
 			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
@@ -151,7 +151,7 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 			if(crc2 != new_crc2)
 			return E_CRC;
-            verif = pkt_set_crc2(pkt, *(data+(12+r->length)));
+            verif = pkt_set_crc2(pkt, *(data+(12+pkt_get_length(pkt))));
             if(verif != PKT_OK)
                 return verif;
         }
@@ -166,22 +166,22 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
     memcpy(buf, pkt, 1);
     count+=1;
     if(predict_header_length(pkt)==7){
-        memcpy(*(buf+count), pkt->length, 1);
+        memcpy(buf, pkt->length, 1);
         count+=1;
     }
     else{
-        memcpy(*(buf+count), pkt->length, 2);
+        memcpy(buf, pkt->length, 2);
         count+=2;
     }
-    memcpy((buf), &(pkt->seqnum), 1);
+    memcpy(buf, &(pkt->seqnum), 1);
     count+=1;
-    memcpy((buf), &(pkt->timestamp), 4);
+    memcpy(buf, &(pkt->timestamp), 4);
     count+=4;
-    memcpy((buf), &(pkt->crc1), 4);
+    memcpy(buf, &(pkt->crc1), 4);
     count+=4;
-    uint16_t len=pkt_get_length(pkt);
-    memcpy((buf), pkt->payload, len);
-    count+=len;
+    uint16_t length=pkt_get_length(pkt);
+    memcpy(buf, pkt->payload, length);
+    count+=length;
     if(pkt_get_crc2(pkt)!=0){
         memcpy(buf, &(pkt->crc2), 4);
     }
@@ -212,7 +212,7 @@ uint8_t  pkt_get_seqnum(const pkt_t* pkt)
 
 uint16_t pkt_get_length(const pkt_t* pkt)
 {
-    if((pkt->length)[0] & 0b10000000 == 0b10000000){
+    if(((pkt->length)[0] & 0b10000000) == 0b10000000){
         uint16_t len = (pkt->length)[1];
         uint16_t len2=(uint16_t) (pkt->length)[0];
         uint16_t len3 = (len2)<<9;
@@ -285,7 +285,7 @@ pkt_status_code pkt_set_length(pkt_t *pkt, const uint16_t length)
     }
     if((length&0b1111111100000000)!=0b0000000000000000){
         pkt->length=(uint8_t *) malloc(2*sizeof(uint8_t));
-        pkt->length[0]=(length&0b1111111100000000);
+        (pkt->length)[0]=(length&0b1111111100000000);
         (pkt->length)[0]=(((pkt->length)[0])|0b1000000000000000);
         (pkt->length)[1]=(length&0b0000000011111111);
     }
@@ -338,7 +338,8 @@ ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
             return -1;
         }
         val=(uint16_t*) data;
-        (uint16_t *) datah = ((uint16_t *))(ntohs(val));
+        (uint16_t *) datah = (uint16_t *) malloc(len*sizeof(uint16_t));
+        datah=((uint16_t *))(ntohs(*val));
         memcpy(retval, datah, 2);
         return 1;
     }
@@ -361,7 +362,7 @@ ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
 
 
 ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
-    if(varuint_predict_length(val)>len){
+    if(varuint_predict_len(val)>len){
         return -1; //taille de data trop petite
     }
     if(varuint_predict_len(val) == 1){
@@ -417,5 +418,6 @@ ssize_t predict_header_length(const pkt_t *pkt){
         return -1;
     }
     length_size = varuint_predict_length(length);
-    return (6+length_size);
+    ssize_t taille=6+length_size;
+    return taille;
 }
