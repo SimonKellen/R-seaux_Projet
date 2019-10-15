@@ -162,7 +162,7 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
-    if(len>&(pkt->length)){
+    if(len>pkt_get_length(pkt)){
         return -1;
     }
     int count=0;
@@ -342,7 +342,7 @@ ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
         }
         val=(uint16_t*) data;
         uint16_t * datah = (uint16_t *) malloc(len*sizeof(uint16_t));
-        datah=(ntohs(*val));
+        *datah=(ntohs(*val));
         memcpy(retval, datah, 2);
         return 1;
     }
@@ -374,7 +374,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
             return -1;
         }
         uint8_t vals = (uint8_t) val;
-        valp = (uint8_t *)(htons(vals));
+        valp = &(htons(vals));
         memcpy(data, valp, 1);
         return 1;
     }
@@ -382,7 +382,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
     if(valp == NULL){
         return -1;
     }
-    uint16_t val2 = htons(val);
+    uint16_t val2 = htons(*val);
     valp = &val2;
     memcpy(data, valp, 2);
     return 2;
