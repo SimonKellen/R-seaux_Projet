@@ -162,6 +162,9 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
+    if(len>&(pkt->length)){
+        return -1;
+    }
     int count=0;
     memcpy(buf, pkt, 1);
     count+=1;
@@ -285,7 +288,7 @@ pkt_status_code pkt_set_length(pkt_t *pkt, const uint16_t length)
     }
     if((length&0b1111111100000000)!=0b0000000000000000){
         pkt->length=(uint8_t *) malloc(2*sizeof(uint8_t));
-        (pkt->length)[0]=(length&0b1111111100000000);
+        (pkt->length)[0]=(length & 0b11111111);
         (pkt->length)[0]=(((pkt->length)[0])|0b1000000000000000);
         (pkt->length)[1]=(length&0b0000000011111111);
     }
@@ -338,8 +341,8 @@ ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
             return -1;
         }
         val=(uint16_t*) data;
-        (uint16_t *) datah = (uint16_t *) malloc(len*sizeof(uint16_t));
-        datah=((uint16_t *))(ntohs(*val));
+        uint16_t * datah = (uint16_t *) malloc(len*sizeof(uint16_t));
+        datah=(ntohs(*val));
         memcpy(retval, datah, 2);
         return 1;
     }
@@ -362,7 +365,7 @@ ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
 
 
 ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
-    if(varuint_predict_len(val)>len){
+    if(varuint_predict_len(val)> (ssize_t)len){
         return -1; //taille de data trop petite
     }
     if(varuint_predict_len(val) == 1){
@@ -371,7 +374,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
             return -1;
         }
         uint8_t vals = (uint8_t) val;
-        valp = &(htons(vals));
+        valp = (uint8_t *)(htons(vals));
         memcpy(data, valp, 1);
         return 1;
     }
@@ -417,7 +420,7 @@ ssize_t predict_header_length(const pkt_t *pkt){
     if(length > 0x8000){
         return -1;
     }
-    length_size = varuint_predict_length(length);
+    ssize_t length_size = varuint_predict_len(length);
     ssize_t taille=6+length_size;
     return taille;
 }
