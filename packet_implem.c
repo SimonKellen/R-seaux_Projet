@@ -172,42 +172,51 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         if((*len)<count){
             return -1;
         }
-        memcpy(buf, pkt->length, 1);
+        *((uint8_t *) (buf + count)) = *(pkt->length);
     }
     else{
-        count+=1;
+        count+=2;
         if((*len)<count){
             return -1;
         }
-        memcpy(buf, pkt->length, 1);
+        *((uint8_t *) (buf+count-1)) = ((pkt->length)[0]);
+        *((uint8_t *) (buf+count)) = ((pkt->length)[1]);
     }
     count+=1;
     if((*len)<count){
-    return -1;
+        return -1;
     }
-    memcpy(buf, &(pkt->seqnum), 1);
+    *((uint8_t *) (buf+count)) = pkt->seqnum;
     count+=4;
     if((*len)<count){
         return -1;
     }
-    memcpy(buf, &(pkt->timestamp), 4);
+    *((uint32_t *) (buf+count)) = pkt->timestamp;
     count+=4;
     if((*len)<count){
         return -1;
     }
-    memcpy(buf, &(pkt->crc1), 4);
+    uint32_t crc1 = crc32(0L, Z_NULL, 0);
+    crc1 = crc32(crc1,(const Bytef *) buf, 8);
+    *((uint32_t *) (buf+count)) = htonl(crc1);
     uint16_t length=pkt_get_length(pkt);
     count+=length;
     if((*len)<count){
         return -1;
     }
-    memcpy(buf, pkt->payload, length);
-    if(pkt_get_crc2(pkt)!=0){
+    const char * payload = pkt_get_payload(pkt);
+    int i;
+    for(i = 0 ; i<length; i++){
+        buf[count+i] = payload[i];
+    }
+    if(pkt_get_tr(pkt)==0){
         count+=4;
         if((*len)<count){
             return -1;
         }
-        memcpy(buf, &(pkt->crc2), 4);
+        uint32_t crc2 = crc32(0L, Z_NULL, 0);
+        crc2 = crc32(crc2,((const Bytef *)payload), length);
+        *((uint32_t*)(buf+count)) = htonl(crc2);
     }
     return PKT_OK;
 }
