@@ -14,7 +14,8 @@ struct __attribute__((__packed__)) pkt {
     uint8_t type:2;
     uint8_t tr:1;
     uint8_t window:5;
-    uint8_t *length;
+    uint8_t l:1;
+    uint16_t length:15;
     uint8_t seqnum;
     uint32_t timestamp;
     uint32_t crc1;
@@ -47,116 +48,88 @@ void pkt_del(pkt_t *pkt)
 pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 {
     pkt_status_code verif;
+    ssize_t taille=predict_header_length(pkt);
     if(len<(11*sizeof(uint8_t))){
         return E_NOHEADER;
     }
-    pkt->length = (uint8_t*)malloc(sizeof(uint8_t));
-    if((pkt->length) == NULL){
-        return -1;
-    }
-    memcpy(pkt, data, 1);
-    memcpy(&((pkt->length)[0]), &(data[1]), 1);
-    if(((pkt->length)[0] & 0b10000000) == 0b10000000 ){
-    	if(realloc((pkt->length),2*sizeof(uint8_t)) == NULL){
-            return -1;
-        }
-        memcpy(&((pkt->length)[1]), &(data[2]), 1);
-    }
-    ssize_t taille = predict_header_length(pkt);
-    
-    if(taille==7){
-        uint8_t seqnum = (uint8_t)data[2];
-        verif = pkt_set_seqnum(pkt, seqnum);
-        if(verif != PKT_OK)
-            return verif;
+    memcpy(pkt, data, 2);
+    if(taille==8){
+        memcpy(pkt, data, 6);
     }
     else{
-        uint8_t seqnum = (uint8_t)data[3];
-        verif = pkt_set_seqnum(pkt, seqnum);
-        if(verif != PKT_OK)
-            return verif;
+        pkt->length=ntohs(pkt_get_length(pkt));
+        memcpy(pkt, data, 5);
     }
-    
     if(taille==7){
         uint32_t timestamp = (uint32_t) *(data + 3);
         verif = pkt_set_timestamp(pkt, timestamp);
-        if(verif != PKT_OK)
+        uint32_t crc1bis = (uint32_t) *(data + 7);        
+        crc1bis = ntohl(crc1bis);
+		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
+		new_crc1 = crc32(new_crc1,(const Bytef*) data, 7);
+        if(crc1bis != new_crc1){
+			return E_CRC;
+        }
+        verif = pkt_set_crc1(pkt, crc1bis);
+        if(verif != PKT_OK){
             return verif;
+        }
+        if(verif != PKT_OK){
+            return verif;
+        }
+        verif = pkt_set_payload(pkt, (data + 11), pkt_get_length(pkt));
+        if(verif != PKT_OK){
+            return verif;
+        }
+        if(&(data[(pkt_get_length(pkt))+11])!=NULL){
+            uint32_t crc2bis = (uint32_t) *(data + ((pkt_get_length(pkt))+11));        
+        	crc2bis = ntohl(crc2bis);
+            uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
+			new_crc2 = crc32(new_crc2,(const Bytef*) data, pkt->length);
+			if(crc2bis != new_crc2){
+                return E_CRC;
+            }
+            verif = pkt_set_crc2(pkt, *(data+(11+pkt_get_length(pkt))));
+            if(verif != PKT_OK){
+                return verif;
+            }
+        }
     }
     else{
         uint32_t timestamp = (uint32_t) *(data + 4);
         verif = pkt_set_timestamp(pkt, timestamp);
-        if(verif != PKT_OK)
+        if(verif != PKT_OK){
             return verif;
-    }
-    
-    if(taille==7){
-        uint32_t crc1bis = (uint32_t) *(data + 7);
-        
-        crc1bis = ntohl(*((uint32_t *)(data + 8)));
-
-		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
-
-		new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
-
-
-		if(crc1bis != new_crc1)
-			return E_CRC;
-        verif = pkt_set_crc1(pkt, crc1bis);
-        if(verif != PKT_OK)
-            return verif;
-    }
-    
-    else{
-        uint32_t crc1bis = (uint32_t) *(data + 8);
-        verif = pkt_set_crc1(pkt, crc1bis);
-    }
-    
-    if(taille==7){
-        verif = pkt_set_payload(pkt, (data + 11), *(pkt->length));
-        if(verif != PKT_OK)
-            return verif;
-    }
-    else{
-        verif = pkt_set_payload(pkt, (data + 12), *(pkt->length));
-        if(verif != PKT_OK)
-            return verif;
-    }
-    if(taille==7){
-        if(&(data[(pkt_get_length(pkt))+11])!=NULL){
-            uint32_t crc2bis = (uint32_t) *(data + ((pkt_get_length(pkt))+11));
-        
-        	crc2bis = ntohl(*((uint32_t *)(data + ((pkt_get_length(pkt))+12))));
-            uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
-
-			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
-
-
-			if(crc2bis != new_crc2)
-			return E_CRC;
-            verif = pkt_set_crc2(pkt, *(data+(11+pkt_get_length(pkt))));
-            if(verif != PKT_OK)
-                return verif;
         }
-    }
-    else{
+        uint32_t crc1bis = (uint32_t) *(data + 8);        
+        crc1bis = ntohl(crc1bis);
+		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
+		new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
+        if(crc1bis != new_crc1){
+			return E_CRC;
+        }
+        verif = pkt_set_crc1(pkt, crc1bis);
+        if(verif != PKT_OK){
+            return verif;
+        }
+        verif = pkt_set_payload(pkt, (data + 12), pkt_get_length(pkt));
+        if(verif != PKT_OK){
+            return verif;
+        }
         if(&(data[(pkt_get_length(pkt))+12])!=NULL){
-            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12));
-        
+            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12));    
         	crc2 = ntohl(*((uint32_t *)(data + ((pkt_get_length(pkt))+13))));
             uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
-
 			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
-
-
 			if(crc2 != new_crc2)
 			return E_CRC;
             verif = pkt_set_crc2(pkt, *(data+(12+pkt_get_length(pkt))));
-            if(verif != PKT_OK)
+            if(verif != PKT_OK){
                 return verif;
+            }
         }
     }
-    	return verif;
+    return verif;
 }
 
 
@@ -172,42 +145,48 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         if((*len)<count){
             return -1;
         }
-        *((uint8_t *) (buf + count)) = *(pkt->length);
+        uint8_t lengthbis=(uint8_t) pkt->length;
+        *((uint8_t *) (buf + count -1)) = lengthbis;
     }
     else{
         count+=2;
         if((*len)<count){
             return -1;
         }
-        *((uint8_t *) (buf+count-1)) = ((pkt->length)[0]);
-        *((uint8_t *) (buf+count)) = ((pkt->length)[1]);
+        *((uint16_t *) (buf+count-2)) = (pkt->length);
     }
     count+=1;
     if((*len)<count){
         return -1;
     }
-    *((uint8_t *) (buf+count)) = pkt->seqnum;
+    *((uint8_t *) (buf+count-1)) = pkt->seqnum;
     count+=4;
     if((*len)<count){
         return -1;
     }
-    *((uint32_t *) (buf+count)) = pkt->timestamp;
+    *((uint32_t *) (buf+count)-4) = pkt->timestamp;
     count+=4;
     if((*len)<count){
         return -1;
     }
     uint32_t crc1 = crc32(0L, Z_NULL, 0);
-    crc1 = crc32(crc1,(const Bytef *) buf, 8);
-    *((uint32_t *) (buf+count)) = htonl(crc1);
+    if(predict_header_length(pkt)==7){
+        crc1 = crc32(crc1,(const Bytef *) buf, 7);
+        *((uint32_t *) (buf+count-4)) = htonl(crc1);
+    }
+    else{
+        crc1 = crc32(crc1,(const Bytef *) buf, 8);
+        *((uint32_t *) (buf+count-4)) = htonl(crc1);
+    }
     uint16_t length=pkt_get_length(pkt);
     count+=length;
     if((*len)<count){
         return -1;
     }
-    const char * payload = pkt_get_payload(pkt);
+    const char *payload = pkt_get_payload(pkt);
     int i;
     for(i = 0 ; i<length; i++){
-        buf[count+i] = payload[i];
+        buf[count+i-length] = payload[i];
     }
     if(pkt_get_tr(pkt)==0){
         count+=4;
@@ -216,7 +195,7 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         }
         uint32_t crc2 = crc32(0L, Z_NULL, 0);
         crc2 = crc32(crc2,((const Bytef *)payload), length);
-        *((uint32_t*)(buf+count)) = htonl(crc2);
+        *((uint32_t*)(buf+count-4)) = htonl(crc2);
     }
     return PKT_OK;
 }
@@ -245,19 +224,7 @@ uint8_t  pkt_get_seqnum(const pkt_t* pkt)
 
 uint16_t pkt_get_length(const pkt_t* pkt)
 {
-    if(((pkt->length)[0] & 0b10000000) == 0b10000000){
-        uint16_t len = (pkt->length)[1];
-        uint16_t len2=(uint16_t) (pkt->length)[0];
-        uint16_t len3 = (len2)<<9;
-        len3=(len3)>>1;
-        return len3+len;
-    }
-    else{
-        uint16_t len=*(pkt->length);
-        len=len<<1;
-        len=len>>1;
-        return len;
-    }
+    return pkt->length;
 }
 
 uint32_t pkt_get_timestamp   (const pkt_t* pkt)
@@ -316,16 +283,7 @@ pkt_status_code pkt_set_length(pkt_t *pkt, const uint16_t length)
     if((length&0b1000000000000000)==0b1000000000000000){
         return E_LENGTH;
     }
-    if((length&0b1111111100000000)!=0b0000000000000000){
-        pkt->length=(uint8_t *) malloc(2*sizeof(uint8_t));
-        (pkt->length)[0]=(length & 0b11111111);
-        (pkt->length)[0]=(((pkt->length)[0])|0b1000000000000000);
-        (pkt->length)[1]=(length&0b0000000011111111);
-    }
-    else{
-        pkt->length=(uint8_t *) malloc(sizeof(uint8_t));
-        *(pkt->length)=length;
-    }
+    pkt->length=length;
     return PKT_OK;
 }
 
@@ -446,11 +404,8 @@ ssize_t varuint_predict_len(uint16_t val){
 
 
 ssize_t predict_header_length(const pkt_t *pkt){
-    uint16_t length = pkt_get_length(pkt);
-    if(length > 0x8000){
-        return -1;
+    if((pkt->l)==1){
+        return 8;
     }
-    ssize_t length_size = varuint_predict_len(length);
-    ssize_t taille=6+length_size;
-    return taille;
+    return 7;
 }
