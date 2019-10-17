@@ -135,68 +135,59 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
-    size_t count=1;
-    if((*len)<count){
-        return -1;
+    size_t count=0;
+    size_t length = pkt_get_length(pkt);
+    size_t length_tot = pkt_get_length(pkt);
+	if((pkt_get_tr(pkt)==0)&&(length>0)){
+		length_tot += 4;
     }
-    memcpy(buf, pkt, 1);
-    if(predict_header_length(pkt)==7){
-        count+=1;
-        if((*len)<count){
-            return -1;
-        }
-        uint8_t lengthbis=(uint8_t) pkt->length;
-        *((uint8_t *) (buf + count -1)) = lengthbis;
+    if(pkt->l==0){
+        length_tot+=11;
     }
     else{
-        count+=2;
-        if((*len)<count){
-            return -1;
-        }
-        *((uint16_t *) (buf+count-2)) = (pkt->length);
+        length_tot+=12;
     }
+	if(*len < length_tot){
+		return E_NOMEM;
+    }
+    memcpy(buf, pkt, 1);
     count+=1;
-    if((*len)<count){
-        return -1;
+    if(predict_header_length(pkt)==7){
+        uint8_t length8bit=(uint8_t) pkt->length;
+        *((uint8_t *) (buf+count)) = length8bit;
+        count+=1;
     }
-    *((uint8_t *) (buf+count-1)) = pkt->seqnum;
+    else{
+        uint16_t llength=(pkt->length)|0b1000000000000000;
+        *((uint16_t *) (buf+count)) = llength;
+        count+=2;
+    }
+    *((uint8_t *) (buf+count)) = pkt->seqnum;
+    count+=1;
+    *((uint32_t *) (buf+count)) = pkt->timestamp;
     count+=4;
-    if((*len)<count){
-        return -1;
-    }
-    *((uint32_t *) (buf+count)-4) = pkt->timestamp;
-    count+=4;
-    if((*len)<count){
-        return -1;
-    }
     uint32_t crc1 = crc32(0L, Z_NULL, 0);
     if(predict_header_length(pkt)==7){
         crc1 = crc32(crc1,(const Bytef *) buf, 7);
-        *((uint32_t *) (buf+count-4)) = htonl(crc1);
+        *((uint32_t *) (buf+count)) = htonl(crc1);
     }
     else{
         crc1 = crc32(crc1,(const Bytef *) buf, 8);
-        *((uint32_t *) (buf+count-4)) = htonl(crc1);
+        *((uint32_t *) (buf+count)) = htonl(crc1);
     }
-    uint16_t length=pkt_get_length(pkt);
-    count+=length;
-    if((*len)<count){
-        return -1;
-    }
+    count+=4;
     const char *payload = pkt_get_payload(pkt);
-    int i;
+    size_t i;
     for(i = 0 ; i<length; i++){
-        buf[count+i-length] = payload[i];
+        buf[count+i] = payload[i];
     }
+    count+=length;
     if(pkt_get_tr(pkt)==0){
-        count+=4;
-        if((*len)<count){
-            return -1;
-        }
         uint32_t crc2 = crc32(0L, Z_NULL, 0);
         crc2 = crc32(crc2,((const Bytef *)payload), length);
-        *((uint32_t*)(buf+count-4)) = htonl(crc2);
+        *((uint32_t*)(buf+count)) = htonl(crc2);
     }
+    count+=4;
     return PKT_OK;
 }
 
