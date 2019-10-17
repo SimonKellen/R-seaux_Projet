@@ -48,21 +48,26 @@ void pkt_del(pkt_t *pkt)
 pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 {
     pkt_status_code verif;
-    ssize_t taille=predict_header_length(pkt);
     if(len<(11*sizeof(uint8_t))){
         return E_NOHEADER;
     }
-    memcpy(pkt, data, 2);
-    if(taille==8){
-        memcpy(pkt, data, 6);
+    int taille;
+    if((data[1]&0b10000000)==0b10000000){
+        taille=8;
     }
     else{
-        pkt->length=ntohs(pkt_get_length(pkt));
-        memcpy(pkt, data, 5);
+        taille=7;
     }
     if(taille==7){
+        memcpy(pkt, data, 1);
+        pkt->length=(uint16_t) data[1];
+        pkt->length=ntohs(pkt_get_length(pkt));
+        pkt->seqnum=(uint8_t) data[2];
         uint32_t timestamp = (uint32_t) *(data + 3);
         verif = pkt_set_timestamp(pkt, timestamp);
+        if(verif != PKT_OK){
+            return verif;
+        }
         uint32_t crc1bis = (uint32_t) *(data + 7);        
         crc1bis = ntohl(crc1bis);
 		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
@@ -71,9 +76,6 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 			return E_CRC;
         }
         verif = pkt_set_crc1(pkt, crc1bis);
-        if(verif != PKT_OK){
-            return verif;
-        }
         if(verif != PKT_OK){
             return verif;
         }
@@ -96,11 +98,8 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
         }
     }
     else{
-        uint32_t timestamp = (uint32_t) *(data + 4);
-        verif = pkt_set_timestamp(pkt, timestamp);
-        if(verif != PKT_OK){
-            return verif;
-        }
+        memcpy(pkt, data, 8);
+        pkt->length=ntohs(pkt_get_length(pkt));
         uint32_t crc1bis = (uint32_t) *(data + 8);        
         crc1bis = ntohl(crc1bis);
 		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
@@ -150,7 +149,12 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 	if(*len < length_tot){
 		return E_NOMEM;
     }
-    memcpy(buf, pkt, 1);
+    uint8_t type1=(pkt_get_type(pkt))<<6;
+    uint8_t tr1=(pkt_get_tr(pkt))<<5;
+    uint8_t window=pkt_get_window(pkt);
+    uint8_t byte1=type1|tr1;
+    byte1=byte1|window;
+    *((uint8_t *) (buf)) = byte1;
     count+=1;
     if(predict_header_length(pkt)==7){
         uint8_t length8bit=(uint8_t) pkt->length;
@@ -158,13 +162,13 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         count+=1;
     }
     else{
-        uint16_t llength=(pkt->length)|0b1000000000000000;
+        uint16_t llength=(pkt_get_length(pkt))|0b1000000000000000;
         *((uint16_t *) (buf+count)) = llength;
         count+=2;
     }
-    *((uint8_t *) (buf+count)) = pkt->seqnum;
+    *((uint8_t *) (buf+count)) = pkt_get_seqnum(pkt);
     count+=1;
-    *((uint32_t *) (buf+count)) = pkt->timestamp;
+    *((uint32_t *) (buf+count)) = pkt_get_timestamp(pkt);
     count+=4;
     uint32_t crc1 = crc32(0L, Z_NULL, 0);
     if(predict_header_length(pkt)==7){
