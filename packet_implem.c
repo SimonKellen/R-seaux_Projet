@@ -241,7 +241,7 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
     count+=4;
     const char *payload = pkt_get_payload(pkt);
     size_t i;
-    for(i = 0 ; i<length; i++){ // place le payload dans le buf
+    for(i = 0 ; i<(pkt_get_length(pkt)); i++){ // place le payload dans le buf
         buf[count+i] = payload[i];
     }
     count+=length;
@@ -251,6 +251,7 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         *((uint32_t*)(buf+count)) = htonl(crc2); // place le crc2 dans le buf
     }
     count+=4;
+    *len=length_tot;
     return PKT_OK;
 }
 
