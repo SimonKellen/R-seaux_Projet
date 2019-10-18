@@ -45,84 +45,143 @@ void pkt_del(pkt_t *pkt)
 }
 
 
-pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
+pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //decode data et le place dans pkt
 {
     pkt_status_code verif;
-    if(len<(11*sizeof(uint8_t))){
+    if(len<(11*sizeof(uint8_t))){ //verifie que le data fasse au moins la taille d un header
         return E_NOHEADER;
     }
     int taille;
-    if((data[1]&0b10000000)==0b10000000){
+    if((data[1]&0b10000000)==0b10000000){ //regarde si len fera 1 ou 2 byte
         taille=8;
     }
     else{
         taille=7;
     }
-    if(taille==7){
-        memcpy(pkt, data, 1);
-        pkt->length=(uint16_t) data[1];
-        pkt->length=ntohs(pkt_get_length(pkt));
-        pkt->seqnum=(uint8_t) data[2];
-        uint32_t timestamp = (uint32_t) *(data + 3);
-        verif = pkt_set_timestamp(pkt, timestamp);
+    if(taille==7){ //si le header fait 7 bytes
+        uint8_t byte1=data[0]; //copie le premier bye de data
+        uint8_t type=byte1>>6; 
+        verif=pkt_set_type(pkt, type); //place type dans pkt
         if(verif != PKT_OK){
             return verif;
         }
-        uint32_t crc1bis = (uint32_t) *(data + 7);        
+        uint8_t tr=(byte1&0b00100000);
+        tr=tr>>5;
+        verif=pkt_set_tr(pkt, tr); //place tr dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint8_t window=(byte1&0b00011111);     
+        verif=pkt_set_window(pkt, window); //place window dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        pkt->l=0; //met l a 0
+        uint8_t length=data[1]; //copie le deuxieme byte de data
+        uint16_t length16bit=(uint16_t) length; //cast le byte en uint16t
+        length16bit=ntohs(length16bit);
+        verif=pkt_set_length(pkt, length16bit); //place length dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint8_t seqnum=data[2]; //copie le troisieme byte de data
+        verif=pkt_set_seqnum(pkt, seqnum); //place seqnum dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint32_t timestamp = (uint32_t) *(data + 3); // copie les 4 bytes apres le troisieme byte de data
+        verif = pkt_set_timestamp(pkt, timestamp); //place timestamp dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint32_t crc1bis = (uint32_t) *(data + 7); // copie les 4 bytes apres le septieme byte de data   
         crc1bis = ntohl(crc1bis);
 		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
-		new_crc1 = crc32(new_crc1,(const Bytef*) data, 7);
-        if(crc1bis != new_crc1){
+		new_crc1 = crc32(new_crc1,(const Bytef*) data, 7); 
+        if(crc1bis != new_crc1){ //verifie que le crc1 correspond
 			return E_CRC;
         }
-        verif = pkt_set_crc1(pkt, crc1bis);
+        verif = pkt_set_crc1(pkt, crc1bis); // place crc1 dans pkt
         if(verif != PKT_OK){
             return verif;
         }
-        verif = pkt_set_payload(pkt, (data + 11), pkt_get_length(pkt));
+        verif = pkt_set_payload(pkt, &(data[11]), pkt_get_length(pkt)); // place le payload dans pkt
         if(verif != PKT_OK){
             return verif;
         }
-        if(&(data[(pkt_get_length(pkt))+11])!=NULL){
+        if(&(data[(pkt_get_length(pkt))+11])!=NULL){ //verifie s il y a un crc2
             uint32_t crc2bis = (uint32_t) *(data + ((pkt_get_length(pkt))+11));        
         	crc2bis = ntohl(crc2bis);
             uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
 			new_crc2 = crc32(new_crc2,(const Bytef*) data, pkt->length);
-			if(crc2bis != new_crc2){
+			if(crc2bis != new_crc2){ //verifie que le crc2 correspond
                 return E_CRC;
             }
-            verif = pkt_set_crc2(pkt, *(data+(11+pkt_get_length(pkt))));
+            verif = pkt_set_crc2(pkt, *(data+(11+pkt_get_length(pkt)))); //place le crc2 dans pkt
             if(verif != PKT_OK){
                 return verif;
             }
         }
     }
-    else{
-        memcpy(pkt, data, 8);
-        pkt->length=ntohs(pkt_get_length(pkt));
-        uint32_t crc1bis = (uint32_t) *(data + 8);        
+    else{ //si le header fait 8 bytes
+        uint8_t byte1=data[0]; // copie le premier byte de data
+        uint8_t type=byte1>>6;
+        verif=pkt_set_type(pkt, type); // place le type dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint8_t tr=(byte1&0b00100000);
+        tr=tr>>5;
+        verif=pkt_set_tr(pkt, tr); // place le tr dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint8_t window=(byte1&0b00011111);   
+        verif=pkt_set_window(pkt, window); // place le window dans tr
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint16_t length=(*((uint16_t *)(data + 1))); // copie les deuxieme et troisieme byte de data
+        pkt->l=1; // met le l a 1
+        length=(length&0b0111111111111111); // prend la reelle valeur de l sans le premier bit mis a 1
+        length=ntohs(length);
+        verif=pkt_set_length(pkt, length); // place length dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint8_t seqnum=data[3]; // copie le quatrieme byte de data
+        verif=pkt_set_seqnum(pkt, seqnum); // place seqnum dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint32_t timestamp = (uint32_t) *(data + 4); // copie quatre bytes de data apres le quatrieme
+        verif = pkt_set_timestamp(pkt, timestamp); // place timestamp dans pkt
+        if(verif != PKT_OK){
+            return verif;
+        }
+        uint32_t crc1bis = (uint32_t) *(data + 8); // copie quatre bytes de data apres le huitieme      
         crc1bis = ntohl(crc1bis);
 		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
 		new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
-        if(crc1bis != new_crc1){
+        if(crc1bis != new_crc1){ //verifie que le crc1 correspond
 			return E_CRC;
         }
-        verif = pkt_set_crc1(pkt, crc1bis);
+        verif = pkt_set_crc1(pkt, crc1bis); //place le crc1 dans pkt
         if(verif != PKT_OK){
             return verif;
         }
-        verif = pkt_set_payload(pkt, (data + 12), pkt_get_length(pkt));
+        verif = pkt_set_payload(pkt, &(data[12]), pkt_get_length(pkt)); // place le payload dans pkt
         if(verif != PKT_OK){
             return verif;
         }
-        if(&(data[(pkt_get_length(pkt))+12])!=NULL){
-            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12));    
-        	crc2 = ntohl(*((uint32_t *)(data + ((pkt_get_length(pkt))+13))));
+        if(&(data[(pkt_get_length(pkt))+12])!=NULL){ // verifie s il y a un crc2
+            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12)); // copie 4 bytes de data apres le douzieme
+        	crc2 = ntohl(crc2);
             uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
 			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
 			if(crc2 != new_crc2)
 			return E_CRC;
-            verif = pkt_set_crc2(pkt, *(data+(12+pkt_get_length(pkt))));
+            verif = pkt_set_crc2(pkt, *(data+(12+pkt_get_length(pkt)))); // verifie que le crc2 correspond
             if(verif != PKT_OK){
                 return verif;
             }
@@ -134,19 +193,19 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
-    size_t count=0;
+    size_t count=0; // cree une variable count qui compte le nombre de bytes ecrits dans buf
     size_t length = pkt_get_length(pkt);
-    size_t length_tot = pkt_get_length(pkt);
-	if((pkt_get_tr(pkt)==0)&&(length>0)){
+    size_t length_tot = pkt_get_length(pkt); // cree une variable qui indiquera la longueur necessaire de buf
+	if((pkt_get_tr(pkt)==0)&&(length>0)){ // incremente la longueur de 4 s il y a un crc2 
 		length_tot += 4;
     }
-    if(pkt->l==0){
+    if(pkt->l==0){ // incremente la taille du header
         length_tot+=11;
     }
     else{
         length_tot+=12;
     }
-	if(*len < length_tot){
+	if(*len < length_tot){ // verifie que la longueur disponible dans buf est suffisante
 		return E_NOMEM;
     }
     uint8_t type1=(pkt_get_type(pkt))<<6;
@@ -154,42 +213,42 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
     uint8_t window=pkt_get_window(pkt);
     uint8_t byte1=type1|tr1;
     byte1=byte1|window;
-    *((uint8_t *) (buf)) = byte1;
+    *((uint8_t *) (buf)) = byte1; //place le premier byte dans buf
     count+=1;
-    if(predict_header_length(pkt)==7){
-        uint8_t length8bit=(uint8_t) pkt->length;
-        *((uint8_t *) (buf+count)) = length8bit;
+    if(predict_header_length(pkt)==7){ // si le header fera 7 bytes
+        uint8_t length8bit=(uint8_t) pkt->length; // cast length en 8 bits
+        *((uint8_t *) (buf+count)) = length8bit; // place length dans buf
         count+=1;
     }
-    else{
-        uint16_t llength=(pkt_get_length(pkt))|0b1000000000000000;
-        *((uint16_t *) (buf+count)) = llength;
+    else{ // si le header fera 8 bytes
+        uint16_t llength=(pkt_get_length(pkt))|0b1000000000000000; // cree le uint16t a placer dans buf qui contient le l suivi du length
+        *((uint16_t *) (buf+count)) = llength; // place length dans buf
         count+=2;
     }
-    *((uint8_t *) (buf+count)) = pkt_get_seqnum(pkt);
+    *((uint8_t *) (buf+count)) = pkt_get_seqnum(pkt); // place le seqnum dans le buf
     count+=1;
-    *((uint32_t *) (buf+count)) = pkt_get_timestamp(pkt);
+    *((uint32_t *) (buf+count)) = pkt_get_timestamp(pkt); // place le timestamp dans le buf
     count+=4;
-    uint32_t crc1 = crc32(0L, Z_NULL, 0);
+    uint32_t crc1 = crc32(0L, Z_NULL, 0); 
     if(predict_header_length(pkt)==7){
         crc1 = crc32(crc1,(const Bytef *) buf, 7);
-        *((uint32_t *) (buf+count)) = htonl(crc1);
+        *((uint32_t *) (buf+count)) = htonl(crc1); // place le crc1 dans le buf
     }
     else{
         crc1 = crc32(crc1,(const Bytef *) buf, 8);
-        *((uint32_t *) (buf+count)) = htonl(crc1);
+        *((uint32_t *) (buf+count)) = htonl(crc1); // place le crc1 dans le buf
     }
     count+=4;
     const char *payload = pkt_get_payload(pkt);
     size_t i;
-    for(i = 0 ; i<length; i++){
+    for(i = 0 ; i<length; i++){ // place le payload dans le buf
         buf[count+i] = payload[i];
     }
     count+=length;
-    if(pkt_get_tr(pkt)==0){
+    if(pkt_get_tr(pkt)==0){ // s il y a un crc2
         uint32_t crc2 = crc32(0L, Z_NULL, 0);
         crc2 = crc32(crc2,((const Bytef *)payload), length);
-        *((uint32_t*)(buf+count)) = htonl(crc2);
+        *((uint32_t*)(buf+count)) = htonl(crc2); // place le crc2 dans le buf
     }
     count+=4;
     return PKT_OK;
