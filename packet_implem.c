@@ -78,8 +78,8 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
         }
         pkt->l=0; //met l a 0
         uint8_t length=data[1]; //copie le deuxieme byte de data
-        length=ntohs(length);
-        uint16_t length16bit=(uint16_t) length; //cast le byte en uint16t
+        uint16_t length16bit=(uint16_t) length;
+        length=ntohs(length); //cast le byte en uint16t
         verif=pkt_set_length(pkt, length16bit); //place length dans pkt
         if(verif != PKT_OK){
             return verif;
@@ -94,38 +94,35 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
         if(verif != PKT_OK){
             return verif;
         }
-        uint32_t crc1bis = (uint32_t) *(data + 7); // copie les 4 bytes apres le septieme byte de data   
-        crc1bis = ntohl(crc1bis);
-        verif = pkt_set_crc1(pkt, crc1bis); // place crc1 dans pkt
+        uint32_t crc1bis = ntohl(*((uint32_t *)(data + 7)));
+        uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
+        new_crc1 = crc32(new_crc1,(const Bytef*) data, 7);
+        if(crc1bis != new_crc1){
+            return E_CRC;
+        }
+        verif = pkt_set_crc1(pkt, crc1bis);
         if(verif != PKT_OK){
             return verif;
-        }
-        
-		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
-		new_crc1 = crc32(new_crc1,(const Bytef*) data, 7); 
-        if(new_crc1 != pkt_get_crc1(pkt)){ //verifie que le crc1 correspond
-            printf("ligne 102");
-			return E_CRC;
         }
         verif = pkt_set_payload(pkt, &(data[11]), pkt_get_length(pkt)); // place le payload dans pkt
         if(verif != PKT_OK){
             return verif;
         }
         if(&(data[(pkt_get_length(pkt))+11])!=NULL){ //verifie s il y a un crc2
-            uint32_t crc2bis = (uint32_t) *(data + ((pkt_get_length(pkt))+11));        
-        	crc2bis = ntohl(crc2bis);
-            verif = pkt_set_crc2(pkt, crc2bis); //place le crc2 dans pkt
-            if(verif != PKT_OK){
-                return verif;
-            }
-            
-            uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
-			new_crc2 = crc32(new_crc2,(const Bytef*) data, pkt->length);
-			if(new_crc2 != pkt_get_crc2(pkt)){ //verifie que le crc2 correspond
-                printf("ligne 119");
-                return E_CRC;
-            }
-            
+            uint32_t crc2bis = ntohl(*((uint32_t *)(data + 7)));
+        	uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
+        	new_crc2 = crc32(new_crc2,(const Bytef*) data, 7);
+        	if(crc2bis != new_crc2){
+        	    return E_CRC;
+	        }
+	        verif = pkt_set_crc2(pkt, crc2bis);
+	        if(verif != PKT_OK){
+	            return verif;
+	        }
+        }
+        verif = pkt_set_payload(pkt, &(data[11]), pkt_get_length(pkt)); // place le payload dans pkt
+        if(verif != PKT_OK){
+            return verif;
         }
     }
     else{ //si le header fait 8 bytes
@@ -148,8 +145,8 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
         }
         uint16_t length=(*((uint16_t *)(data + 1))); // copie les deuxieme et troisieme byte de data
         pkt->l=1; // met le l a 1
-        length=(length&0b0111111111111111); // prend la reelle valeur de l sans le premier bit mis a 1
         length=ntohs(length);
+        length=(length&0b0111111111111111); // prend la reelle valeur de l sans le premier bit mis a 1
         verif=pkt_set_length(pkt, length); // place length dans pkt
         if(verif != PKT_OK){
             return verif;
@@ -164,15 +161,13 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
         if(verif != PKT_OK){
             return verif;
         }
-        uint32_t crc1bis = (uint32_t) *(data + 8); // copie quatre bytes de data apres le huitieme      
-        crc1bis = ntohl(crc1bis);
-		uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
-		new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
-        if(crc1bis != new_crc1){ //verifie que le crc1 correspond
-            printf("ligne 169");
-			return E_CRC;
+        uint32_t crc1bis = ntohl(*((uint32_t *)(data + 8)));
+        uint32_t new_crc1 = crc32(0L, Z_NULL, 0);
+        new_crc1 = crc32(new_crc1,(const Bytef*) data, 8);
+        if(crc1bis != new_crc1){
+            return E_CRC;
         }
-        verif = pkt_set_crc1(pkt, crc1bis); //place le crc1 dans pkt
+        verif = pkt_set_crc1(pkt, crc1bis);
         if(verif != PKT_OK){
             return verif;
         }
@@ -181,18 +176,16 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
             return verif;
         }
         if(&(data[(pkt_get_length(pkt))+12])!=NULL){ // verifie s il y a un crc2
-            uint32_t crc2 = (uint32_t) *(data + ((pkt_get_length(pkt))+12)); // copie 4 bytes de data apres le douzieme
-        	crc2 = ntohl(crc2);
-            uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
-			new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
-			if(crc2 != new_crc2){
-                printf("ligne 186");
-			return E_CRC;
-            }
-            verif = pkt_set_crc2(pkt, *(data+(12+pkt_get_length(pkt)))); // verifie que le crc2 correspond
-            if(verif != PKT_OK){
-                return verif;
-            }
+            uint32_t crc2bis = ntohl(*((uint32_t *)(data + 8)));
+        	uint32_t new_crc2 = crc32(0L, Z_NULL, 0);
+        	new_crc2 = crc32(new_crc2,(const Bytef*) data, 8);
+        	if(crc2bis != new_crc2){
+        	    return E_CRC;
+	        }
+	        verif = pkt_set_crc2(pkt, crc2bis);
+	        if(verif != PKT_OK){
+	            return verif;
+	        }
         }
     }
     return verif;
