@@ -78,8 +78,8 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
         }
         pkt->l=0; //met l a 0
         uint8_t length=data[1]; //copie le deuxieme byte de data
+        length=ntohs(length);
         uint16_t length16bit=(uint16_t) length; //cast le byte en uint16t
-        length16bit=ntohs(length16bit);
         verif=pkt_set_length(pkt, length16bit); //place length dans pkt
         if(verif != PKT_OK){
             return verif;
@@ -193,13 +193,20 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
 
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
+    int L;
+    if(pkt->l==1){
+        L=1;
+    }
+    else{
+        L=0;
+    }
     size_t count=0; // cree une variable count qui compte le nombre de bytes ecrits dans buf
     size_t length = pkt_get_length(pkt);
     size_t length_tot = pkt_get_length(pkt); // cree une variable qui indiquera la longueur necessaire de buf
 	if((pkt_get_tr(pkt)==0)&&(length>0)){ // incremente la longueur de 4 s il y a un crc2 
 		length_tot += 4;
     }
-    if(pkt->l==0){ // incremente la taille du header
+    if(L==0){ // incremente la taille du header
         length_tot+=11;
     }
     else{
@@ -215,13 +222,14 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
     byte1=byte1|window;
     *((uint8_t *) (buf)) = byte1; //place le premier byte dans buf
     count+=1;
-    if(predict_header_length(pkt)==7){ // si le header fera 7 bytes
+    if(L==0){ // si le header fera 7 bytes
         uint8_t length8bit=(uint8_t) pkt->length; // cast length en 8 bits
         *((uint8_t *) (buf+count)) = length8bit; // place length dans buf
         count+=1;
     }
     else{ // si le header fera 8 bytes
-        uint16_t llength=(pkt_get_length(pkt))|0b1000000000000000; // cree le uint16t a placer dans buf qui contient le l suivi du length
+        uint16_t length2=htons(pkt_get_length(pkt));
+        uint16_t llength=length2|0b1000000000000000; // cree le uint16t a placer dans buf qui contient le l suivi du length
         *((uint16_t *) (buf+count)) = llength; // place length dans buf
         count+=2;
     }
@@ -230,7 +238,7 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
     *((uint32_t *) (buf+count)) = pkt_get_timestamp(pkt); // place le timestamp dans le buf
     count+=4;
     uint32_t crc1 = crc32(0L, Z_NULL, 0); 
-    if(predict_header_length(pkt)==7){
+    if(L==0){
         crc1 = crc32(crc1,(const Bytef *) buf, 7);
         *((uint32_t *) (buf+count)) = htonl(crc1); // place le crc1 dans le buf
     }
