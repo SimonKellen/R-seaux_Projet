@@ -228,9 +228,8 @@ pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
         count+=1;
     }
     else{ // si le header fera 8 bytes
-        uint16_t length2=htons(pkt_get_length(pkt));
-        uint16_t llength=length2|0b1000000000000000; // cree le uint16t a placer dans buf qui contient le l suivi du length
-        *((uint16_t *) (buf+count)) = llength; // place length dans buf
+        uint16_t length2=htons((pkt->length)|0b1000000000000000);
+        *((uint16_t *) (buf+count)) = length2; // place length dans buf
         count+=2;
     }
     *((uint8_t *) (buf+count)) = pkt_get_seqnum(pkt); // place le seqnum dans le buf
