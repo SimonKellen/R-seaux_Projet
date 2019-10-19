@@ -194,7 +194,7 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt) //dec
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
     int L;
-    if(pkt->l==1){
+    if((pkt->l)==1){
         L=1;
     }
     else{
@@ -292,7 +292,7 @@ uint16_t pkt_get_length(const pkt_t* pkt)
 
 uint32_t pkt_get_timestamp   (const pkt_t* pkt)
 {
-    return (pkt->timestamp);
+    return pkt->timestamp;
 }
 
 uint32_t pkt_get_crc1   (const pkt_t* pkt)
@@ -343,8 +343,11 @@ pkt_status_code pkt_set_seqnum(pkt_t *pkt, const uint8_t seqnum)
 
 pkt_status_code pkt_set_length(pkt_t *pkt, const uint16_t length)
 {
-    if((length&0b1000000000000000)==0b1000000000000000){
-        return E_LENGTH;
+    if((length&0b1111111110000000)!=0){
+        pkt->l=1;
+    }
+    else{
+        pkt->l=0;
     }
     pkt->length=length;
     return PKT_OK;
@@ -368,9 +371,7 @@ pkt_status_code pkt_set_crc2(pkt_t *pkt, const uint32_t crc2)
     return PKT_OK;
 }
 
-pkt_status_code pkt_set_payload(pkt_t *pkt,
-                                const char *data,
-                                const uint16_t length)
+pkt_status_code pkt_set_payload(pkt_t *pkt, const char *data, const uint16_t length)
 {
     uint16_t newLength = min(length, MAX_PAYLOAD_SIZE);
     pkt->payload = (char*)malloc(sizeof(char)* newLength);
@@ -378,8 +379,7 @@ pkt_status_code pkt_set_payload(pkt_t *pkt,
         return E_NOMEM;
     }
     memcpy(pkt->payload,data,newLength);
-
-    return pkt_set_length(pkt,newLength);
+    return pkt_set_length(pkt,length);
 }
 
 ssize_t varuint_decode(const uint8_t *data, const size_t len, uint16_t *retval){
@@ -433,7 +433,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
     if(valp == NULL){
         return -1;
     }
-    uint16_t val2 = htons(val);
+    uint16_t val2 = (htons(val)|0b1000000000000000);
     valp = &val2;
     memcpy(data, valp, 2);
     return 2;
@@ -442,11 +442,7 @@ ssize_t varuint_encode(uint16_t val, uint8_t *data, const size_t len){
 
 
 size_t varuint_len(const uint8_t *data){
-    uint8_t *data1 = malloc(sizeof(uint8_t));
-    memcpy(data1, data, sizeof(uint8_t));
-    uint8_t *data2 = malloc(sizeof(uint8_t));
-    memcpy(data2, data, 1+sizeof(uint8_t));
-    if(data2 == NULL){
+    if(data[0]==0){
         return 1;
     }
     return 2;
@@ -461,7 +457,6 @@ ssize_t varuint_predict_len(uint16_t val){
         return 2;
     }
     return 1;
-    
 }
 
 
